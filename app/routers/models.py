@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
 from app.db import get_db
@@ -36,7 +37,7 @@ async def transcribe(
         raise HTTPException(status_code=402, detail=str(e)) from e
 
     try:
-        text = transcribe_glm_asr(wav_audio)
+        text = await run_in_threadpool(transcribe_glm_asr, wav_audio)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"语音识别失败: {e}") from e
 

@@ -2,6 +2,8 @@
 
 Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、用量计量，以及统一代理 STT/LLM 模型请求。
 
+仓库职责边界见 [docs/repository-boundaries.md](docs/repository-boundaries.md)。当前仓库只负责云端账号、订阅、支付、额度和模型代理；桌面端 UI/本地 bridge 在 `typeup-win`，本地录音/热键/输入 engine 在 `voice-keyboard`。
+
 ## 功能概览
 
 - 邮箱/密码注册与登录
