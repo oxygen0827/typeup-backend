@@ -93,6 +93,20 @@ GLM_API_KEY=你的真实 GLM Key
 
 如果暂时没有 GLM 密钥，也可以把 `DEV_MOCK_MODELS=true`，这样 STT/LLM 会返回模拟结果。
 
+## 支付宝正式支付状态
+
+当前开发和联调阶段继续使用 `DEV_MOCK_PAYMENTS=true`。支付宝开放平台的电脑网站支付接入指引已经走通，但正式收款仍需要项目组长使用自己的支付宝商家主体重新开通“电脑网站支付”，并生成正式参数。
+
+后端切换真实支付宝支付前，需要项目组长提供并确认：
+
+- `ALIPAY_APP_ID`：正式应用 APPID。
+- `ALIPAY_PRIVATE_KEY`：项目组长应用对应的应用私钥，只能配置在服务器 `.env` 或密钥管理服务中，不要提交仓库。
+- `ALIPAY_PUBLIC_KEY`：支付宝公钥，不是应用公钥。
+- `ALIPAY_GATEWAY=https://openapi.alipay.com/gateway.do`。
+- `APP_BASE_URL`：支付宝服务器可访问的公网 HTTPS 后端地址。
+
+正式参数齐全并且“电脑网站支付”开通后，再把 `DEV_MOCK_PAYMENTS=false`。如果产品未开通、应用未上线，或 `APP_BASE_URL` 仍是本机地址，生产环境不要关闭 mock 支付。
+
 推荐前端先打通这条链路：
 
 1. `POST /v1/auth/register` 或 `POST /v1/auth/login`
