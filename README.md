@@ -6,50 +6,265 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 
 - 邮箱/密码注册与登录
 - Access token + refresh token 鉴权
-- 用户权益与额度校验
+- 用户权益与 STT/AI 额度校验
 - GLM-ASR-2512 语音识别代理
 - 智谱 GLM 聊天/编辑代理
 - 支付宝电脑网站支付
 - 支付成功后自动开通权益
-- 简单 Admin API：用户列表、手动开通、加额度、禁用账号
+- 本地 mock 支付、mock STT、mock LLM，方便前端先联调
+- Admin API：用户列表、手动开通、加额度、禁用账号
 
 ## 本地启动
 
 ```powershell
-cd C:\Users\19051\Desktop\ai_deploy\voice-keyboard-backend
+cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+Copy-Item .env.example .env
 .venv\Scripts\uvicorn app.main:app --reload
 ```
 
-复制 `.env.example` 为 `.env`，填写密钥：
+启动后：
+
+```text
+API Base URL: http://localhost:8000
+Health:       http://localhost:8000/health
+OpenAPI:      http://localhost:8000/openapi.json
+Swagger UI:   http://localhost:8000/docs
+```
+
+## 环境变量
+
+复制 `.env.example` 为 `.env`，本地联调推荐先使用 mock 模式：
 
 ```env
 DATABASE_URL=sqlite:///./voice_keyboard.db
 APP_BASE_URL=http://localhost:8000
 JWT_SECRET=change-this-long-random-secret
 ADMIN_API_KEY=change-this-admin-key
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+DEV_MOCK_MODE=false
+DEV_MOCK_PAYMENTS=true
+DEV_MOCK_MODELS=false
 
+# Models
 GLM_API_KEY=your_zhipuai_api_key
 GLM_ASR_MODEL=glm-asr-2512
 LLM_PROVIDER=zhipuai
 LLM_MODEL=glm-4-flash
 
+# Alipay
 ALIPAY_APP_ID=your_app_id
 ALIPAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 ALIPAY_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 ALIPAY_GATEWAY=https://openapi.alipay.com/gateway.do
+# Sandbox:
+# ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
 ```
 
-支付宝沙箱：
+字段说明：
+
+- `APP_BASE_URL`：后端对外地址，支付宝回调和 mock `pay_url` 会使用它。
+- `CORS_ORIGINS`：允许访问后端的前端 origin，多个用英文逗号分隔。
+- `DEV_MOCK_MODE`：旧版总 mock 开关。设为 `true` 时会同时 mock 支付和模型。
+- `DEV_MOCK_PAYMENTS`：只 mock 支付。真实支付宝应用未准备好时设为 `true`。
+- `DEV_MOCK_MODELS`：只 mock STT/LLM。已有 GLM 密钥并想测真实模型时设为 `false`。
+- `JWT_SECRET`：JWT 签名密钥，生产环境必须换成长随机字符串。
+- `ADMIN_API_KEY`：Admin API 的 `X-Admin-Key`。
+
+## 前端联调模式
+
+如果真实支付宝还没准备好，但已有 GLM 密钥，建议使用当前模式：
 
 ```env
-ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
+DEV_MOCK_MODE=false
+DEV_MOCK_PAYMENTS=true
+DEV_MOCK_MODELS=false
+GLM_API_KEY=你的真实 GLM Key
 ```
+
+开启后：
+
+- `POST /v1/orders` 不再要求支付宝密钥，返回本地 mock `pay_url`。
+- 浏览器打开 mock `pay_url` 后，订单会被标记为 `paid`，并自动开通对应套餐权益。
+- `POST /v1/stt/transcribe` 仍校验 WAV-only 标准、鉴权和额度，并会请求真实 GLM-ASR。
+- `POST /v1/llm/chat` 仍校验鉴权和额度，并会请求真实 GLM。
+- `GET /health` 会返回 `dev_mock_mode`、`dev_mock_payments`、`dev_mock_models`，方便前端确认当前后端环境。
+
+如果暂时没有 GLM 密钥，也可以把 `DEV_MOCK_MODELS=true`，这样 STT/LLM 会返回模拟结果。
+
+推荐前端先打通这条链路：
+
+1. `POST /v1/auth/register` 或 `POST /v1/auth/login`
+2. 保存 `access_token` 和 `refresh_token`
+3. `GET /v1/plans`
+4. `POST /v1/orders`
+5. 打开返回的 `pay_url`
+6. 轮询 `GET /v1/orders/{order_id}`，直到 `status` 为 `paid`
+7. 调用 `GET /v1/auth/me` 刷新权益状态
+8. 调用 `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat`
+
+## TypeUp 桌面端联调
+
+当前 Windows 前端项目位于：
+
+```text
+C:\Users\Administrator\Desktop\ai_deploy\typeup-win
+```
+
+TypeUp 桌面端接入方式：
+
+- React UI 不直接请求本后端，而是请求 Electron 启动的本地 Node server。
+- 本地 Node server 负责代理注册、登录、刷新 token、套餐、订单等接口。
+- 登录成功后，本地 Node server 会把后端地址和 token 写入 Python engine 配置。
+- Python engine 的 STT/LLM provider 使用 `typeup_backend`，统一调用本后端的 `/v1/stt/transcribe` 和 `/v1/llm/chat`。
+- 后端负责权益校验、额度扣减、模型代理和支付状态。
+
+推荐本地联调启动顺序：
+
+```powershell
+# 1. 启动后端
+cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
+Copy-Item .env.example .env
+# 确认 .env 内 DEV_MOCK_PAYMENTS=true，DEV_MOCK_MODELS=false，并填入 GLM_API_KEY
+.venv\Scripts\uvicorn app.main:app --reload
+
+# 2. 启动 TypeUp 前端
+cd C:\Users\Administrator\Desktop\ai_deploy\typeup-win
+npm.cmd install
+npm run engine:setup
+$env:TYPEUP_BACKEND_URL="http://localhost:8000"
+npm run start
+```
+
+桌面端联调流程：
+
+1. 在 TypeUp 右侧「账号与订阅」面板填写后端地址。
+2. 注册或登录账号。
+3. 选择套餐并创建订单。
+4. 在 mock 模式下打开 `pay_url`，订单会直接支付成功。
+5. 刷新订单或账号状态，确认权益变为 active。
+6. 启动本地引擎，STT/LLM 会通过后端代理执行。
+
+## 当前联调状态
+
+当前后端已经和 `typeup-win` 本地桥接层跑通以下链路：
+
+- 后端健康检查返回 `dev_mock_mode`、`dev_mock_payments`、`dev_mock_models`。
+- React UI 通过 Electron 本地 server 注册、登录、刷新 session。
+- 本地 server 会把后端地址、access token、refresh token 写入 Python engine 配置。
+- `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
+- `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat` 可用 `DEV_MOCK_MODELS=true` 验证 mock 模型链路，也可用真实 `GLM_API_KEY` 验证真实模型链路。
+- refresh token 使用旋转机制，旧 refresh token 在刷新成功后会失效。
+- 用户被 Admin API 禁用后，`POST /v1/auth/refresh` 会撤销当前 refresh token 并返回 `403 FORBIDDEN`。
+- `/v1/llm/chat` 已限制消息数量、消息角色、消息长度、`temperature` 和 `max_tokens`，异常输入会返回统一 `VALIDATION_ERROR`。
+- SQLite 本地模式下已处理时间字段的 UTC 归一化，避免 refresh token 过期判断出现 naive/aware datetime 比较错误。
+- FastAPI 启动初始化已使用 lifespan，在启动时创建表并写入默认套餐。
+
+推荐每次改动后至少跑：
+
+```powershell
+cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
+.venv\Scripts\python.exe -m compileall app
+.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+前后端联调时再走一遍：注册/登录 -> 创建订单 -> 打开 mock 支付 -> 刷新权益 -> STT -> LLM。
+
+## 统一错误响应
+
+所有 JSON 错误响应统一为：
+
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "请先登录",
+    "status": 401
+  }
+}
+```
+
+参数校验错误会额外带 `details`：
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "请求参数不正确",
+    "status": 422,
+    "details": []
+  }
+}
+```
+
+前端建议按 `error.code` 做逻辑分支，`error.message` 只用于展示。
+
+常见错误码：
+
+```text
+BAD_REQUEST
+UNAUTHORIZED
+PAYMENT_REQUIRED
+FORBIDDEN
+NOT_FOUND
+CONFLICT
+VALIDATION_ERROR
+INTERNAL_SERVER_ERROR
+UPSTREAM_ERROR
+```
+
+## 鉴权
+
+需要登录的接口统一使用：
+
+```text
+Authorization: Bearer <ACCESS_TOKEN>
+```
+
+登录和注册都会返回：
+
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "token_type": "bearer",
+  "user": {
+    "id": "usr_xxx",
+    "email": "demo@example.com",
+    "status": "active",
+    "created_at": "2026-05-14T00:00:00Z"
+  }
+}
+```
+
+前端刷新策略：
+
+- `access_token` 过期或接口返回 `401` 时，调用 `POST /v1/auth/refresh`。
+- refresh 成功后替换本地的 `access_token` 和 `refresh_token`。
+- refresh 返回 `401` 或 `403` 时清空本地登录态并回到登录页；`403` 通常表示账号已停用。
+- refresh token 是旋转式的，每次刷新都会返回新的 refresh token。
 
 ## 核心 API
 
-认证：
+### 健康检查
+
+```text
+GET /health
+```
+
+返回：
+
+```json
+{
+  "ok": true,
+  "dev_mock_mode": false,
+  "dev_mock_payments": true,
+  "dev_mock_models": false
+}
+```
+
+### 认证
 
 ```text
 POST /v1/auth/register
@@ -57,62 +272,6 @@ POST /v1/auth/login
 POST /v1/auth/refresh
 GET  /v1/auth/me
 ```
-
-支付与套餐：
-
-```text
-GET  /v1/plans
-POST /v1/orders
-GET  /v1/orders/{order_id}
-POST /v1/payments/alipay/notify
-```
-
-模型代理：
-
-```text
-POST /v1/stt/transcribe
-POST /v1/llm/chat
-```
-
-管理接口：
-
-```text
-GET  /admin/users
-GET  /admin/users/{user_id}
-POST /admin/users/{user_id}/grant-pro
-POST /admin/users/{user_id}/add-quota
-POST /admin/users/{user_id}/disable
-```
-
-Admin API 需要请求头：
-
-```text
-X-Admin-Key: <ADMIN_API_KEY>
-```
-
-## 用户支付流程
-
-1. 客户端登录，拿到 `access_token`。
-2. 客户端请求 `GET /v1/plans` 展示套餐。
-3. 用户选择套餐后，客户端请求 `POST /v1/orders`。
-4. 后端根据当前登录用户创建订单，生成支付宝 `pay_url`。
-5. 客户端打开 `pay_url`，用户在浏览器中完成支付宝付款。
-6. 支付宝异步通知 `/v1/payments/alipay/notify`。
-7. 后端验签、校验金额、标记订单为 `paid`，并创建用户权益。
-8. 客户端轮询 `GET /v1/orders/{order_id}`，订单变为 `paid` 后刷新 `/v1/auth/me`。
-
-支付成功后，权益示例：
-
-```text
-plan_id = pro_monthly
-starts_at = 当前时间
-ends_at = 当前时间 + 30 天
-stt_minutes_limit = 600
-ai_requests_limit = 3000
-status = active
-```
-
-## 示例请求
 
 注册：
 
@@ -130,43 +289,286 @@ curl -X POST http://localhost:8000/v1/auth/login \
   -d '{"email":"demo@example.com","password":"password123"}'
 ```
 
+刷新 token：
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
+```
+
+当前用户和权益：
+
+```bash
+curl http://localhost:8000/v1/auth/me \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+`/v1/auth/me` 返回：
+
+```json
+{
+  "user": {
+    "id": "usr_xxx",
+    "email": "demo@example.com",
+    "status": "active",
+    "created_at": "2026-05-14T00:00:00Z"
+  },
+  "entitlement": {
+    "active": true,
+    "plan_id": "pro_monthly",
+    "starts_at": "2026-05-14T00:00:00Z",
+    "ends_at": "2026-06-13T00:00:00Z",
+    "stt_minutes_limit": 600,
+    "stt_seconds_used": 0,
+    "ai_requests_limit": 3000,
+    "ai_requests_used": 0
+  }
+}
+```
+
+### 套餐与订单
+
+```text
+GET  /v1/plans
+POST /v1/orders
+GET  /v1/orders/{order_id}
+```
+
 查看套餐：
 
 ```bash
 curl http://localhost:8000/v1/plans
 ```
 
-创建支付宝订单：
+创建订单：
 
 ```bash
 curl -X POST http://localhost:8000/v1/orders \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -d '{"plan_id":"pro_monthly","payment_method":"alipay"}'
 ```
 
-返回里会包含 `pay_url`。桌面客户端打开该链接，然后轮询：
+订单返回：
+
+```json
+{
+  "id": "ord_xxx",
+  "user_id": "usr_xxx",
+  "plan_id": "pro_monthly",
+  "amount_cents": 2900,
+  "currency": "CNY",
+  "payment_method": "alipay",
+  "status": "pending",
+  "pay_url": "http://localhost:8000/v1/payments/mock/return?order_id=ord_xxx",
+  "paid_at": null,
+  "created_at": "2026-05-14T00:00:00Z"
+}
+```
+
+查询订单：
 
 ```bash
 curl http://localhost:8000/v1/orders/ord_xxx \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
-## Notes
+订单状态：
 
-This service provides the backend for Voice Keyboard software launch:
+```text
+pending
+paid
+closed
+refunded
+```
 
-- Account registration and login
-- Access token and refresh token auth
-- Entitlement and quota checks
-- GLM-ASR-2512 STT proxy
-- Zhipu GLM chat proxy
-- Alipay computer website payment
-- Paid order to entitlement activation
+### 支付流程
 
-For production:
+真实支付宝流程：
 
-- Use PostgreSQL instead of the default SQLite database.
-- Use a long random `JWT_SECRET`.
-- Keep Alipay private keys out of source control.
-- `APP_BASE_URL` must be a public HTTPS URL reachable by Alipay notify callbacks.
+1. 前端登录，拿到 `access_token`。
+2. 前端请求 `GET /v1/plans` 展示套餐。
+3. 用户选择套餐后，前端请求 `POST /v1/orders`。
+4. 后端创建订单并生成支付宝 `pay_url`。
+5. 前端打开 `pay_url`，用户在浏览器中付款。
+6. 支付宝异步通知 `POST /v1/payments/alipay/notify`。
+7. 后端验签、校验金额、标记订单为 `paid`，并创建用户权益。
+8. 前端轮询 `GET /v1/orders/{order_id}`，订单变为 `paid` 后刷新 `GET /v1/auth/me`。
+
+mock 支付流程：
+
+1. `.env` 设置 `DEV_MOCK_PAYMENTS=true`。
+2. 前端请求 `POST /v1/orders`。
+3. 前端打开返回的 mock `pay_url`。
+4. 后端直接把订单标记为 `paid` 并开通权益。
+5. 前端轮询订单并刷新 `/v1/auth/me`。
+
+### STT 语音识别
+
+```text
+POST /v1/stt/transcribe
+```
+
+鉴权：
+
+```text
+Authorization: Bearer <ACCESS_TOKEN>
+```
+
+请求：
+
+```text
+multipart/form-data
+字段名：file
+MIME：audio/wav
+```
+
+音频必须使用 WAV-only 标准：
+
+```text
+格式：WAV
+编码：PCM signed 16-bit little-endian
+采样率：16000 Hz
+声道：mono / 单声道
+单次时长：不超过 30 秒
+文件大小：不超过 25 MB
+```
+
+客户端不要直接上传 `webm`、`mp3`、`m4a`、`ogg` 或裸 `pcm`。如果录音源不是上述 WAV 标准，需要客户端先转成 `16kHz mono 16-bit PCM WAV` 后再上传。
+
+示例请求：
+
+```bash
+curl -X POST http://localhost:8000/v1/stt/transcribe \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -F "file=@audio.wav;type=audio/wav"
+```
+
+返回：
+
+```json
+{
+  "text": "识别文本",
+  "audio_seconds": 1
+}
+```
+
+常见错误：
+
+```text
+400: 音频格式不符合 WAV-only 标准，或文件为空、超长、超大
+401: 未登录或 access token 失效
+402: 当前用户没有有效权益，或 STT 额度不足
+502: 上游 GLM-ASR 请求失败
+```
+
+### LLM 聊天
+
+```text
+POST /v1/llm/chat
+```
+
+请求：
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "帮我润色这句话"
+    }
+  ],
+  "temperature": 0.1,
+  "max_tokens": 1000
+}
+```
+
+返回：
+
+```json
+{
+  "text": "AI 回复文本",
+  "usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  }
+}
+```
+
+常见错误：
+
+```text
+401: 未登录或 access token 失效
+402: 当前用户没有有效权益，或 AI 请求额度不足
+502: 上游 LLM 请求失败
+```
+
+## Admin API
+
+Admin API 需要请求头：
+
+```text
+X-Admin-Key: <ADMIN_API_KEY>
+```
+
+接口：
+
+```text
+GET  /admin/users
+GET  /admin/users/{user_id}
+POST /admin/users/{user_id}/grant-pro
+POST /admin/users/{user_id}/add-quota
+POST /admin/users/{user_id}/disable
+```
+
+手动开通权益：
+
+```bash
+curl -X POST http://localhost:8000/admin/users/usr_xxx/grant-pro \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  -d '{"plan_id":"pro_monthly"}'
+```
+
+加额度：
+
+```bash
+curl -X POST http://localhost:8000/admin/users/usr_xxx/add-quota \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  -d '{"stt_minutes":60,"ai_requests":200}'
+```
+
+禁用用户：
+
+```bash
+curl -X POST http://localhost:8000/admin/users/usr_xxx/disable \
+  -H "X-Admin-Key: <ADMIN_API_KEY>"
+```
+
+## 默认套餐
+
+```text
+pro_monthly
+价格：29.00 CNY
+周期：30 天
+STT：600 分钟
+AI：3000 次
+
+pro_yearly
+价格：199.00 CNY
+周期：365 天
+STT：600 分钟
+AI：3000 次
+```
+
+## 生产部署注意事项
+
+- 使用 PostgreSQL 替代默认 SQLite。
+- 使用长随机 `JWT_SECRET`。
+- 不要把支付宝私钥提交到仓库。
+- `APP_BASE_URL` 必须是支付宝可访问的公网 HTTPS 地址。
+- 生产环境关闭 `DEV_MOCK_MODE`、`DEV_MOCK_PAYMENTS`、`DEV_MOCK_MODELS`。
+- 按实际前端域名收窄 `CORS_ORIGINS`。

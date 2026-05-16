@@ -82,6 +82,42 @@ def mark_alipay_order_paid(db: Session, notify: dict[str, str]) -> bool:
     return True
 
 
+def mark_mock_order_paid(db: Session, order_id: str) -> bool:
+    order = db.get(Order, order_id)
+    if order is None:
+        raise ValueError("订单不存在")
+
+    plan = db.get(Plan, order.plan_id)
+    if plan is None:
+        raise ValueError("套餐不存在")
+
+    provider_trade_no = f"mock_{order.id}"
+    existing_payment = db.scalar(
+        select(Payment).where(Payment.provider == "mock", Payment.provider_trade_no == provider_trade_no)
+    )
+    if existing_payment is not None:
+        return order.status == OrderStatus.paid
+
+    paid_at = now_utc()
+    db.add(Payment(
+        order_id=order.id,
+        provider="mock",
+        provider_trade_no=provider_trade_no,
+        status="TRADE_SUCCESS",
+        raw_notify=json.dumps({"order_id": order.id, "mock": True}, ensure_ascii=False, sort_keys=True),
+        paid_at=paid_at,
+    ))
+
+    if order.status != OrderStatus.paid:
+        order.status = OrderStatus.paid
+        order.provider_trade_no = provider_trade_no
+        order.paid_at = paid_at
+        grant_entitlement(db, order, plan)
+
+    db.commit()
+    return True
+
+
 def current_entitlement(db: Session, user_id: str) -> Entitlement | None:
     now = now_utc()
     return db.scalar(

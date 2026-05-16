@@ -41,12 +41,16 @@ def create_order(
     db.flush()
 
     try:
-        client = AlipayClient(get_settings())
-        order.pay_url = client.build_page_pay_url(
-            out_trade_no=order.id,
-            subject=f"Voice Keyboard {plan.name}",
-            total_amount_cents=order.amount_cents,
-        )
+        settings = get_settings()
+        if settings.dev_mock_payments:
+            order.pay_url = f"{settings.app_base_url.rstrip('/')}/v1/payments/mock/return?order_id={order.id}"
+        else:
+            client = AlipayClient(settings)
+            order.pay_url = client.build_page_pay_url(
+                out_trade_no=order.id,
+                subject=f"Voice Keyboard {plan.name}",
+                total_amount_cents=order.amount_cents,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"支付宝配置错误: {e}") from e
 

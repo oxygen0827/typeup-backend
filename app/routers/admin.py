@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db import get_db
 from app.models import Entitlement, EntitlementStatus, Plan, User, UserStatus, now_utc
-from app.schemas import AdminAddQuotaIn, AdminGrantIn, UserOut
+from app.schemas import AdminAddQuotaIn, AdminEntitlementOut, AdminGrantIn, AdminOkOut, AdminUserOut, UserOut
 from app.services import entitlement_summary
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -19,7 +19,7 @@ def require_admin(x_admin_key: str = Header(default="")) -> None:
         raise HTTPException(status_code=403, detail="admin key 无效")
 
 
-@router.get("/users")
+@router.get("/users", response_model=list[AdminUserOut])
 def list_users(
     _: None = Depends(require_admin),
     db: Session = Depends(get_db),
@@ -34,7 +34,7 @@ def list_users(
     ]
 
 
-@router.get("/users/{user_id}")
+@router.get("/users/{user_id}", response_model=AdminUserOut)
 def get_user(
     user_id: str,
     _: None = Depends(require_admin),
@@ -46,7 +46,7 @@ def get_user(
     return {"user": UserOut.model_validate(user), "entitlement": entitlement_summary(db, user.id)}
 
 
-@router.post("/users/{user_id}/grant-pro")
+@router.post("/users/{user_id}/grant-pro", response_model=AdminEntitlementOut)
 def grant_pro(
     user_id: str,
     payload: AdminGrantIn,
@@ -75,7 +75,7 @@ def grant_pro(
     return {"ok": True, "entitlement": entitlement_summary(db, user.id)}
 
 
-@router.post("/users/{user_id}/add-quota")
+@router.post("/users/{user_id}/add-quota", response_model=AdminEntitlementOut)
 def add_quota(
     user_id: str,
     payload: AdminAddQuotaIn,
@@ -103,7 +103,7 @@ def add_quota(
     return {"ok": True, "entitlement": entitlement_summary(db, user.id)}
 
 
-@router.post("/users/{user_id}/disable")
+@router.post("/users/{user_id}/disable", response_model=AdminOkOut)
 def disable_user(
     user_id: str,
     _: None = Depends(require_admin),

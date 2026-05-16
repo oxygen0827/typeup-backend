@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.alipay import AlipayClient
 from app.config import get_settings
 from app.db import get_db
-from app.services import mark_alipay_order_paid
+from app.services import mark_alipay_order_paid, mark_mock_order_paid
 
 router = APIRouter(prefix="/v1/payments", tags=["payments"])
 
@@ -36,6 +36,29 @@ def alipay_return():
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px;">
         <h2>支付结果处理中</h2>
         <p>你可以回到 Voice Keyboard，应用会自动刷新订阅状态。</p>
+      </body>
+    </html>
+    """
+
+
+@router.get("/mock/return", response_class=HTMLResponse)
+def mock_return(order_id: str, db: Session = Depends(get_db)):
+    settings = get_settings()
+    if not settings.dev_mock_payments:
+        raise HTTPException(status_code=404, detail="mock 支付未启用")
+
+    try:
+        mark_mock_order_paid(db, order_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return """
+    <!doctype html>
+    <html lang="zh-CN">
+      <head><meta charset="utf-8"><title>Mock 支付完成</title></head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px;">
+        <h2>Mock 支付已完成</h2>
+        <p>你可以回到 Voice Keyboard，应用会刷新订单和订阅状态。</p>
       </body>
     </html>
     """

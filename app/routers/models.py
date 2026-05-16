@@ -3,30 +3,40 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.model_clients import chat_zhipu, estimate_pcm_seconds, transcribe_glm_asr
+from app.model_clients import (
+    MAX_ASR_FILE_BYTES,
+    InvalidWavAudio,
+    chat_zhipu,
+    transcribe_glm_asr,
+    validate_wav_audio,
+)
 from app.models import UsageKind, UsageRecord, User
-from app.schemas import LLMChatIn, LLMChatOut
+from app.schemas import LLMChatIn, LLMChatOut, STTTranscribeOut
 from app.security import get_current_user
 from app.services import ensure_ai_quota, ensure_stt_quota
 
 router = APIRouter(prefix="/v1", tags=["models"])
 
 
-@router.post("/stt/transcribe")
+@router.post("/stt/transcribe", response_model=STTTranscribeOut)
 async def transcribe(
     file: UploadFile,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    pcm = await file.read()
-    audio_seconds = estimate_pcm_seconds(pcm)
+    wav_audio = await file.read(MAX_ASR_FILE_BYTES + 1)
+    try:
+        audio_seconds = validate_wav_audio(wav_audio)
+    except InvalidWavAudio as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     try:
         ensure_stt_quota(db, current_user.id, audio_seconds)
     except PermissionError as e:
         raise HTTPException(status_code=402, detail=str(e)) from e
 
     try:
-        text = transcribe_glm_asr(pcm)
+        text = transcribe_glm_asr(wav_audio)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"语音识别失败: {e}") from e
 
