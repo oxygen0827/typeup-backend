@@ -130,7 +130,7 @@ TypeUp 桌面端接入方式：
 
 - React UI 不直接请求本后端，而是请求 Electron 启动的本地 Node server。
 - 本地 Node server 负责代理注册、登录、刷新 token、套餐、订单等接口。
-- 登录成功后，本地 Node server 会把后端地址和 token 写入 Python engine 配置。
+- 登录成功后，本地 Node server 会把后端地址和 token 同时写入 `%APPDATA%\TypeUp\cloud-bridge.json` 和 Python engine 配置。
 - Python engine 的 STT/LLM provider 使用 `typeup_backend`，统一调用本后端的 `/v1/stt/transcribe` 和 `/v1/llm/chat`。
 - 后端负责权益校验、额度扣减、模型代理和支付状态。
 
@@ -167,6 +167,7 @@ npm run start
 - 后端健康检查返回 `dev_mock_mode`、`dev_mock_payments`、`dev_mock_models`。
 - React UI 通过 Electron 本地 server 注册、登录、刷新 session。
 - 本地 server 会把后端地址、access token、refresh token 写入 Python engine 配置。
+- 桌面端会在 engine 启动、STT/LLM 请求 401、以及刷新 session 后同步 `cloud-bridge.json` 与 engine 配置，避免旋转式 refresh token 失配后出现“刷新凭证无效”。
 - `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
 - `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat` 可用 `DEV_MOCK_MODELS=true` 验证 mock 模型链路，也可用真实 `GLM_API_KEY` 验证真实模型链路。
 - refresh token 使用旋转机制，旧 refresh token 在刷新成功后会失效。
@@ -256,6 +257,7 @@ Authorization: Bearer <ACCESS_TOKEN>
 
 - `access_token` 过期或接口返回 `401` 时，调用 `POST /v1/auth/refresh`。
 - refresh 成功后替换本地的 `access_token` 和 `refresh_token`。
+- TypeUp 桌面端需要同时更新 `cloud-bridge.json` 和 Python engine 配置；如果只更新其中一处，旧 refresh token 会因为旋转机制失效，后续 STT/LLM 可能返回“刷新凭证无效”。
 - refresh 返回 `401` 或 `403` 时清空本地登录态并回到登录页；`403` 通常表示账号已停用。
 - refresh token 是旋转式的，每次刷新都会返回新的 refresh token。
 
