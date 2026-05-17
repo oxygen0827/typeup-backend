@@ -7,6 +7,7 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 ## 功能概览
 
 - 邮箱/密码注册与登录
+- 新用户注册后自动发放隐藏的 `free_trial` 免费权益
 - Access token + refresh token 鉴权
 - 用户权益与 STT/AI 额度校验
 - GLM-ASR-2512 语音识别代理
@@ -15,6 +16,8 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 - 支付成功后自动开通权益
 - 本地 mock 支付、mock STT、mock LLM，方便前端先联调
 - Admin API：用户列表、手动开通、加额度、禁用账号
+
+当前测试服务器通过 FRP 暴露为 `http://150.158.146.192:6053`，健康检查应返回 `ok=true`、`dev_mock_payments=true`、`dev_mock_models=false`。正式上线前仍需要替换为公网 HTTPS 域名，并关闭 mock 支付。
 
 ## 本地启动
 
@@ -95,6 +98,31 @@ GLM_API_KEY=你的真实 GLM Key
 
 如果暂时没有 GLM 密钥，也可以把 `DEV_MOCK_MODELS=true`，这样 STT/LLM 会返回模拟结果。
 
+## 注册与免费权益
+
+注册接口会校验邮箱格式和密码长度，密码必须至少 8 位、最多 128 位。校验失败时会返回可直接展示给用户的中文提示，例如：
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "密码至少 8 位",
+    "status": 422,
+    "details": []
+  }
+}
+```
+
+新用户注册成功后会自动获得隐藏套餐 `free_trial`：
+
+```text
+周期：30 天
+STT：600 分钟
+AI：3000 次
+```
+
+`free_trial` 不会出现在 `GET /v1/plans` 的可购买套餐列表中，只用于注册后自动开通。前端不需要让测试用户先购买或手动订阅，注册后刷新 `/v1/auth/me` 即可看到可用权益。
+
 ## 支付宝正式支付状态
 
 当前开发和联调阶段继续使用 `DEV_MOCK_PAYMENTS=true`。支付宝开放平台的电脑网站支付接入指引已经走通，但正式收款仍需要项目组长使用自己的支付宝商家主体重新开通“电脑网站支付”，并生成正式参数。
@@ -149,9 +177,9 @@ Copy-Item .env.example .env
 # 2. 启动 TypeUp 前端
 cd C:\Users\Administrator\Desktop\ai_deploy\typeup-win
 npm.cmd install
-npm run engine:setup
+npm.cmd run engine:setup
 $env:TYPEUP_BACKEND_URL="http://localhost:8000"
-npm run start
+npm.cmd run start
 ```
 
 桌面端联调流程：
@@ -163,12 +191,16 @@ npm run start
 5. 刷新订单或账号状态，确认权益变为 active。
 6. 启动本地引擎，STT/LLM 会通过后端代理执行。
 
+测试版安装包已经默认使用 `http://150.158.146.192:6053`，给普通测试用户分发时不需要让他们手动填写后端地址。测试用户只需要注册账号，系统会自动给 `free_trial` 权益；只有验证付费链路时才需要点击套餐购买。
+
 ## 当前联调状态
 
 当前后端已经和 `typeup-win` 本地桥接层跑通以下链路：
 
 - 后端健康检查返回 `dev_mock_mode`、`dev_mock_payments`、`dev_mock_models`。
 - React UI 通过 Electron 本地 server 注册、登录、刷新 session。
+- 注册参数校验会返回明确提示；密码少于 8 位时返回「密码至少 8 位」，便于桌面端直接展示。
+- 新注册账号会自动获得 `free_trial` 免费权益，额度为 30 天、600 分钟 STT、3000 次 AI 请求。
 - 本地 server 会把后端地址、access token、refresh token 写入 Python engine 配置。
 - 桌面端会在 engine 启动、STT/LLM 请求 401、以及刷新 session 后同步 `cloud-bridge.json` 与 engine 配置，避免旋转式 refresh token 失配后出现“刷新凭证无效”。
 - `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
@@ -185,7 +217,7 @@ npm run start
 ```powershell
 cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
 .venv\Scripts\python.exe -m compileall app
-.venv\Scripts\python.exe -m unittest discover -s tests
+.venv\Scripts\python.exe -W error::ResourceWarning -m unittest discover -s tests
 ```
 
 前后端联调时再走一遍：注册/登录 -> 创建订单 -> 打开 mock 支付 -> 刷新权益 -> STT -> LLM。
@@ -210,7 +242,7 @@ cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "请求参数不正确",
+    "message": "密码至少 8 位",
     "status": 422,
     "details": []
   }
@@ -301,6 +333,8 @@ curl -X POST http://localhost:8000/v1/auth/register \
   -d '{"email":"demo@example.com","password":"password123"}'
 ```
 
+注册密码至少 8 位。注册成功后会自动发放 `free_trial` 权益，前端可以立即调用 `GET /v1/auth/me` 刷新账号额度。
+
 登录：
 
 ```bash
@@ -336,7 +370,7 @@ curl http://localhost:8000/v1/auth/me \
   },
   "entitlement": {
     "active": true,
-    "plan_id": "pro_monthly",
+    "plan_id": "free_trial",
     "starts_at": "2026-05-14T00:00:00Z",
     "ends_at": "2026-06-13T00:00:00Z",
     "stt_minutes_limit": 600,
@@ -571,6 +605,13 @@ curl -X POST http://localhost:8000/admin/users/usr_xxx/disable \
 ## 默认套餐
 
 ```text
+free_trial
+价格：0.00 CNY
+周期：30 天
+STT：600 分钟
+AI：3000 次
+说明：隐藏套餐，仅注册后自动发放，不在 GET /v1/plans 中展示
+
 pro_monthly
 价格：29.00 CNY
 周期：30 天
