@@ -1,6 +1,7 @@
 from functools import lru_cache
 import os
 
+from dotenv import load_dotenv
 from pydantic import BaseModel
 
 
@@ -16,17 +17,7 @@ DEFAULT_CORS_ORIGINS = [
 
 def _load_dotenv() -> None:
     env_path = os.path.join(os.getcwd(), ".env")
-    if not os.path.exists(env_path):
-        return
-    with open(env_path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            os.environ.setdefault(key, value)
+    load_dotenv(env_path, override=False)
 
 
 class Settings(BaseModel):
