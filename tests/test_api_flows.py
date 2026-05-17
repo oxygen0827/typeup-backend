@@ -131,6 +131,20 @@ class ApiFlowTests(unittest.TestCase):
             self.assertEqual(rejected.status_code, 403, rejected.text)
             self.assertEqual(rejected.json()["error"]["code"], "FORBIDDEN")
 
+    def test_register_validation_message_is_actionable(self):
+        from fastapi.testclient import TestClient
+
+        app = _load_app_with_temp_db()
+        with TestClient(app) as client:
+            response = client.post("/v1/auth/register", json={
+                "email": "not-an-email",
+                "password": "123456",
+            })
+            self.assertEqual(response.status_code, 422, response.text)
+            message = response.json()["error"]["message"]
+            self.assertIn("请输入正确的邮箱地址", message)
+            self.assertIn("密码至少 8 位", message)
+
 
 if __name__ == "__main__":
     unittest.main()
