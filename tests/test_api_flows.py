@@ -56,9 +56,18 @@ class ApiFlowTests(unittest.TestCase):
             self.assertEqual(register.status_code, 200, register.text)
             token = register.json()["access_token"]
 
+            trial_me = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+            self.assertEqual(trial_me.status_code, 200, trial_me.text)
+            trial = trial_me.json()["entitlement"]
+            self.assertTrue(trial["active"])
+            self.assertEqual(trial["plan_id"], "free_trial")
+            self.assertEqual(trial["stt_minutes_limit"], 600)
+            self.assertEqual(trial["ai_requests_limit"], 3000)
+
             plans = client.get("/v1/plans")
             self.assertEqual(plans.status_code, 200, plans.text)
             self.assertGreaterEqual(len(plans.json()), 1)
+            self.assertNotIn("free_trial", {plan["id"] for plan in plans.json()})
 
             order = client.post(
                 "/v1/orders",

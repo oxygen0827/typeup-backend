@@ -3,7 +3,19 @@ from sqlalchemy.orm import Session
 from app.models import Plan
 
 
+FREE_TRIAL_PLAN_ID = "free_trial"
+
 DEFAULT_PLANS = [
+    {
+        "id": FREE_TRIAL_PLAN_ID,
+        "name": "Free Trial",
+        "price_cents": 0,
+        "currency": "CNY",
+        "duration_days": 30,
+        "stt_minutes": 600,
+        "ai_requests": 3000,
+        "active": 0,
+    },
     {
         "id": "pro_monthly",
         "name": "Pro 月卡",

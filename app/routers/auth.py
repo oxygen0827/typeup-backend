@@ -9,7 +9,7 @@ from app.security import (
     authenticate_user, create_access_token, get_current_user, hash_password,
     issue_refresh_token, token_hash,
 )
-from app.services import entitlement_summary
+from app.services import entitlement_summary, grant_registration_trial
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
@@ -23,6 +23,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
     user = User(email=email, password_hash=hash_password(payload.password))
     db.add(user)
     db.flush()
+    grant_registration_trial(db, user.id)
     refresh = issue_refresh_token(db, user)
     db.commit()
     db.refresh(user)

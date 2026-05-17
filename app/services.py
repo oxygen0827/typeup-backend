@@ -6,14 +6,15 @@ from sqlalchemy.orm import Session
 
 from app.alipay import amount_to_cents
 from app.models import Entitlement, EntitlementStatus, Order, OrderStatus, Payment, Plan, UsageKind, UsageRecord, now_utc
+from app.plans import FREE_TRIAL_PLAN_ID
 
 
-def grant_entitlement(db: Session, order: Order, plan: Plan) -> Entitlement:
+def grant_plan_entitlement(db: Session, user_id: str, plan: Plan) -> Entitlement:
     now = now_utc()
     active = db.scalar(
         select(Entitlement)
         .where(
-            Entitlement.user_id == order.user_id,
+            Entitlement.user_id == user_id,
             Entitlement.status == EntitlementStatus.active,
             Entitlement.ends_at > now,
         )
@@ -22,7 +23,7 @@ def grant_entitlement(db: Session, order: Order, plan: Plan) -> Entitlement:
     starts_at = active.ends_at if active else now
     ends_at = starts_at + timedelta(days=plan.duration_days)
     entitlement = Entitlement(
-        user_id=order.user_id,
+        user_id=user_id,
         plan_id=plan.id,
         starts_at=starts_at,
         ends_at=ends_at,
@@ -32,6 +33,25 @@ def grant_entitlement(db: Session, order: Order, plan: Plan) -> Entitlement:
     )
     db.add(entitlement)
     return entitlement
+
+
+def grant_entitlement(db: Session, order: Order, plan: Plan) -> Entitlement:
+    return grant_plan_entitlement(db, order.user_id, plan)
+
+
+def grant_registration_trial(db: Session, user_id: str) -> Entitlement | None:
+    existing = db.scalar(
+        select(Entitlement).where(
+            Entitlement.user_id == user_id,
+            Entitlement.plan_id == FREE_TRIAL_PLAN_ID,
+        )
+    )
+    if existing is not None:
+        return existing
+    plan = db.get(Plan, FREE_TRIAL_PLAN_ID)
+    if plan is None:
+        return None
+    return grant_plan_entitlement(db, user_id, plan)
 
 
 def mark_alipay_order_paid(db: Session, notify: dict[str, str]) -> bool:
