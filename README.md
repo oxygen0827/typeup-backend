@@ -135,6 +135,7 @@ TypeUp 桌面端接入方式：
 - 登录成功后，本地 Node server 会把后端地址和 token 同时写入 `%APPDATA%\TypeUp\cloud-bridge.json` 和 Python engine 配置。
 - Python engine 的 STT/LLM provider 使用 `typeup_backend`，统一调用本后端的 `/v1/stt/transcribe` 和 `/v1/llm/chat`。
 - 后端负责权益校验、额度扣减、模型代理和支付状态。
+- 快捷键、悬浮状态框和本地热键策略由 TypeUp 桌面端/engine 管理；后端只负责账号、权益、额度、支付和模型代理，不下发平台快捷键配置。
 
 推荐本地联调启动顺序：
 
@@ -173,6 +174,7 @@ npm run start
 - `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
 - `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat` 可用 `DEV_MOCK_MODELS=true` 验证 mock 模型链路，也可用真实 `GLM_API_KEY` 验证真实模型链路。
 - refresh token 使用旋转机制，旧 refresh token 在刷新成功后会失效。
+- TypeUp 桌面端快捷键提示会按当前平台和本地 engine 配置动态显示；Windows 默认 `ALT` / `ALT + SPACE`，macOS 默认右 `Shift` / 右 `Option`。
 - 用户被 Admin API 禁用后，`POST /v1/auth/refresh` 会撤销当前 refresh token 并返回 `403 FORBIDDEN`。
 - `/v1/llm/chat` 已限制消息数量、消息角色、消息长度、`temperature` 和 `max_tokens`，异常输入会返回统一 `VALIDATION_ERROR`。
 - SQLite 本地模式下已处理时间字段的 UTC 归一化，避免 refresh token 过期判断出现 naive/aware datetime 比较错误。
