@@ -6,7 +6,15 @@ import unittest
 from pathlib import Path
 
 
+def _dispose_loaded_engine():
+    db_module = sys.modules.get("app.db")
+    engine = getattr(db_module, "engine", None)
+    if engine is not None:
+        engine.dispose()
+
+
 def _load_app_with_temp_db():
+    _dispose_loaded_engine()
     fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     Path(db_path).unlink(missing_ok=True)
@@ -44,6 +52,9 @@ def _load_app_with_temp_db():
 
 
 class ApiFlowTests(unittest.TestCase):
+    def tearDown(self):
+        _dispose_loaded_engine()
+
     def test_auth_billing_mock_payment_and_model_flow(self):
         from fastapi.testclient import TestClient
 
