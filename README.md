@@ -29,6 +29,12 @@ Copy-Item .env.example .env
 .venv\Scripts\uvicorn app.main:app --reload
 ```
 
+需要运行本仓库测试时，先安装开发依赖：
+
+```powershell
+.venv\Scripts\pip install -r requirements-dev.txt
+```
+
 启动后：
 
 ```text
@@ -211,13 +217,14 @@ npm.cmd run start
 - `/v1/llm/chat` 已限制消息数量、消息角色、消息长度、`temperature` 和 `max_tokens`，异常输入会返回统一 `VALIDATION_ERROR`。
 - SQLite 本地模式下已处理时间字段的 UTC 归一化，避免 refresh token 过期判断出现 naive/aware datetime 比较错误。
 - FastAPI 启动初始化已使用 lifespan，在启动时创建表并写入默认套餐。
+- 本仓库测试依赖已拆分到 `requirements-dev.txt`；本地或 CI 跑测试前先安装开发依赖，再执行 `pytest tests`。
 
 推荐每次改动后至少跑：
 
 ```powershell
 cd C:\Users\Administrator\Desktop\ai_deploy\voice-keyboard-backend
-.venv\Scripts\python.exe -m compileall app
-.venv\Scripts\python.exe -W error::ResourceWarning -m unittest discover -s tests
+.venv\Scripts\python.exe -m compileall app tests
+.venv\Scripts\python.exe -m pytest tests
 ```
 
 前后端联调时再走一遍：注册/登录 -> 创建订单 -> 打开 mock 支付 -> 刷新权益 -> STT -> LLM。
