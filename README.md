@@ -19,6 +19,17 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 
 当前测试服务器通过 FRP 暴露为 `http://150.158.146.192:6053`，健康检查应返回 `ok=true`、`dev_mock_payments=true`、`dev_mock_models=false`。正式上线前仍需要替换为公网 HTTPS 域名，并关闭 mock 支付。
 
+## 0.1.10 桌面端联调状态
+
+`typeup-win` 0.1.10 主要是桌面端 UI 与发布体验更新，后端 API 契约没有变化。新版桌面端仍通过 Electron 本地 server 调用本仓库的账号、订阅、订单、STT、LLM 和用量接口。
+
+本次发布前后端已验证：
+
+- `.venv\Scripts\python.exe -m pytest -q`
+- `.venv\Scripts\python.exe -m compileall -q app tests`
+
+测试服务器继续保持当前联调模式：真实 GLM 模型链路、mock 支付链路。正式上线真实支付宝收款前，仍需项目组长提供已开通“电脑网站支付”的正式支付宝应用参数，并把后端切到公网 HTTPS 域名。
+
 ## 本地启动
 
 ```powershell
