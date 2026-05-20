@@ -156,6 +156,69 @@ class ApiFlowTests(unittest.TestCase):
             self.assertIn("请输入正确的邮箱地址", message)
             self.assertIn("密码至少 8 位", message)
 
+    def test_alipay_notify_rejects_trade_number_conflicts(self):
+        _load_app_with_temp_db()
+        from app.db import Base, SessionLocal, engine
+        from app.models import Order, Payment
+        from app.plans import seed_plans
+        from app.services import mark_alipay_order_paid
+
+        Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            seed_plans(db)
+            first = Order(user_id="usr_1", plan_id="pro_monthly", amount_cents=2900)
+            second = Order(user_id="usr_1", plan_id="pro_monthly", amount_cents=2900)
+            db.add_all([first, second])
+            db.flush()
+
+            self.assertTrue(mark_alipay_order_paid(db, {
+                "out_trade_no": first.id,
+                "trade_no": "trade_shared",
+                "trade_status": "TRADE_SUCCESS",
+                "total_amount": "29.00",
+            }))
+
+            with self.assertRaises(ValueError):
+                mark_alipay_order_paid(db, {
+                    "out_trade_no": second.id,
+                    "trade_no": "trade_shared",
+                    "trade_status": "TRADE_SUCCESS",
+                    "total_amount": "29.00",
+                })
+
+            db.rollback()
+            payments = db.query(Payment).filter(Payment.provider_trade_no == "trade_shared").all()
+            self.assertEqual(len(payments), 1)
+
+    def test_alipay_notify_rejects_repaying_paid_order_with_new_trade_number(self):
+        _load_app_with_temp_db()
+        from app.db import Base, SessionLocal, engine
+        from app.models import Order
+        from app.plans import seed_plans
+        from app.services import mark_alipay_order_paid
+
+        Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            seed_plans(db)
+            order = Order(user_id="usr_1", plan_id="pro_monthly", amount_cents=2900)
+            db.add(order)
+            db.flush()
+
+            self.assertTrue(mark_alipay_order_paid(db, {
+                "out_trade_no": order.id,
+                "trade_no": "trade_first",
+                "trade_status": "TRADE_SUCCESS",
+                "total_amount": "29.00",
+            }))
+
+            with self.assertRaises(ValueError):
+                mark_alipay_order_paid(db, {
+                    "out_trade_no": order.id,
+                    "trade_no": "trade_second",
+                    "trade_status": "TRADE_SUCCESS",
+                    "total_amount": "29.00",
+                })
+
 
 if __name__ == "__main__":
     unittest.main()

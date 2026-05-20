@@ -75,7 +75,14 @@ def mark_alipay_order_paid(db: Session, notify: dict[str, str]) -> bool:
         select(Payment).where(Payment.provider == "alipay", Payment.provider_trade_no == trade_no)
     )
     if existing_payment is not None:
+        if existing_payment.order_id != order.id:
+            raise ValueError("支付宝交易号已绑定其他订单")
         return order.status == OrderStatus.paid
+
+    if order.status == OrderStatus.paid:
+        if order.provider_trade_no == trade_no:
+            return True
+        raise ValueError("订单已支付，不能绑定新的支付宝交易号")
 
     plan = db.get(Plan, order.plan_id)
     if plan is None:

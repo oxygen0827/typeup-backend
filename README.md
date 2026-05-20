@@ -19,11 +19,13 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 
 当前测试服务器通过 FRP 暴露为 `http://150.158.146.192:6053`，健康检查应返回 `ok=true`、`dev_mock_payments=true`、`dev_mock_models=false`。正式上线前仍需要替换为公网 HTTPS 域名，并关闭 mock 支付。
 
-## 0.1.10 桌面端联调状态
+## 0.1.13 桌面端联调状态
 
-`typeup-win` 0.1.10 主要更新桌面端 UI、发布体验和 AI 指令编辑体验，后端 API 契约没有变化。新版桌面端仍通过 Electron 本地 server 调用本仓库的账号、订阅、订单、STT、LLM 和用量接口。
+`typeup-win` 0.1.13 主要修复 Windows `ALT + SPACE` AI 编辑后的热键状态残留、底部状态栏对齐、桌面/安装器图标尺寸，以及打包时自动重建内嵌 Python engine。后端 API 契约没有变化，新版桌面端仍通过 Electron 本地 server 调用本仓库的账号、订阅、订单、STT、LLM 和用量接口。
 
 桌面端 AI 编辑已经迁移 macOS 版的 Instruction Mode：`ALT + SPACE` 录音后先调用本后端 STT 转写，再由本地 engine 做意图分类、安全上下文选择和文本替换执行。需要 LLM 的改写、生成、翻译、摘要等能力统一走本后端 `/v1/llm/chat`，由后端继续负责鉴权、权益校验、额度扣减和模型代理。选区读取、替换校验、撤销、删除、快捷键执行和状态框展示仍属于桌面端/engine 职责，后端不直接控制用户输入框。
+
+支付宝回调处理已补强冲突保护：同一个 `trade_no` 只能绑定一个订单；已支付订单只接受相同交易号的重复通知，不能再绑定新的支付宝交易号。
 
 本次发布前后端已验证：
 
@@ -32,10 +34,8 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 
 桌面端同步验证：
 
-- `npm.cmd run build`
-- `npm.cmd run engine:build`
 - `npm.cmd run build:win`
-- `engine\voice-keyboard\.venv\Scripts\python.exe -m unittest discover -s engine\voice-keyboard\test`
+- `engine\voice-keyboard\.venv\Scripts\python.exe -m unittest discover -s engine\voice-keyboard\test`，共 126 项
 
 测试服务器继续保持当前联调模式：真实 GLM 模型链路、mock 支付链路。正式上线真实支付宝收款前，仍需项目组长提供已开通“电脑网站支付”的正式支付宝应用参数，并把后端切到公网 HTTPS 域名。
 
@@ -231,6 +231,7 @@ npm.cmd run start
 - 本地 server 会把后端地址、access token、refresh token 写入 Python engine 配置。
 - 桌面端会在 engine 启动、STT/LLM 请求 401、以及刷新 session 后同步 `cloud-bridge.json` 与 engine 配置，避免旋转式 refresh token 失配后出现“刷新凭证无效”。
 - `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
+- 支付宝 notify 会拒绝同一 `trade_no` 绑定到不同订单，也会拒绝已支付订单改绑新的交易号，避免支付回调重复或串单时污染订单状态。
 - `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat` 可用 `DEV_MOCK_MODELS=true` 验证 mock 模型链路，也可用真实 `GLM_API_KEY` 验证真实模型链路。
 - `ALT + SPACE` AI 指令编辑链路已接入后端模型代理：语音指令经 `/v1/stt/transcribe` 识别，需要模型判断或改写时再经 `/v1/llm/chat`，额度和鉴权仍由本后端统一处理。
 - AI 普通问答回复只在桌面端状态框展示，不会由后端或 engine 直接打进输入框；只有被桌面端识别为生成、改写或记忆片段召回的操作才会写入当前应用。
