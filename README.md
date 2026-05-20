@@ -21,12 +21,21 @@ Voice Keyboard 软件版后端服务，负责账号、授权、订阅支付、�
 
 ## 0.1.10 桌面端联调状态
 
-`typeup-win` 0.1.10 主要是桌面端 UI 与发布体验更新，后端 API 契约没有变化。新版桌面端仍通过 Electron 本地 server 调用本仓库的账号、订阅、订单、STT、LLM 和用量接口。
+`typeup-win` 0.1.10 主要更新桌面端 UI、发布体验和 AI 指令编辑体验，后端 API 契约没有变化。新版桌面端仍通过 Electron 本地 server 调用本仓库的账号、订阅、订单、STT、LLM 和用量接口。
+
+桌面端 AI 编辑已经迁移 macOS 版的 Instruction Mode：`ALT + SPACE` 录音后先调用本后端 STT 转写，再由本地 engine 做意图分类、安全上下文选择和文本替换执行。需要 LLM 的改写、生成、翻译、摘要等能力统一走本后端 `/v1/llm/chat`，由后端继续负责鉴权、权益校验、额度扣减和模型代理。选区读取、替换校验、撤销、删除、快捷键执行和状态框展示仍属于桌面端/engine 职责，后端不直接控制用户输入框。
 
 本次发布前后端已验证：
 
 - `.venv\Scripts\python.exe -m pytest -q`
 - `.venv\Scripts\python.exe -m compileall -q app tests`
+
+桌面端同步验证：
+
+- `npm.cmd run build`
+- `npm.cmd run engine:build`
+- `npm.cmd run build:win`
+- `engine\voice-keyboard\.venv\Scripts\python.exe -m unittest discover -s engine\voice-keyboard\test`
 
 测试服务器继续保持当前联调模式：真实 GLM 模型链路、mock 支付链路。正式上线真实支付宝收款前，仍需项目组长提供已开通“电脑网站支付”的正式支付宝应用参数，并把后端切到公网 HTTPS 域名。
 
@@ -180,6 +189,7 @@ TypeUp 桌面端接入方式：
 - 登录成功后，本地 Node server 会把后端地址和 token 同时写入 `%APPDATA%\TypeUp\cloud-bridge.json` 和 Python engine 配置。
 - Python engine 的 STT/LLM provider 使用 `typeup_backend`，统一调用本后端的 `/v1/stt/transcribe` 和 `/v1/llm/chat`。
 - 后端负责权益校验、额度扣减、模型代理和支付状态。
+- AI 指令编辑中的选区优先级、可追踪片段、替换计划校验、记忆片段、删除/撤销和快捷键执行都在 TypeUp 桌面端/engine 完成；后端只提供受鉴权保护的 STT/LLM 代理。
 - 快捷键、悬浮状态框和本地热键策略由 TypeUp 桌面端/engine 管理；后端只负责账号、权益、额度、支付和模型代理，不下发平台快捷键配置。
 
 推荐本地联调启动顺序：
@@ -201,7 +211,7 @@ npm.cmd run start
 
 桌面端联调流程：
 
-1. 在 TypeUp 右侧「账号与订阅」面板填写后端地址。
+1. 在 TypeUp 左侧模块栏打开「账号」模块，填写后端地址。
 2. 注册或登录账号。
 3. 选择套餐并创建订单。
 4. 在 mock 模式下打开 `pay_url`，订单会直接支付成功。
@@ -222,6 +232,8 @@ npm.cmd run start
 - 桌面端会在 engine 启动、STT/LLM 请求 401、以及刷新 session 后同步 `cloud-bridge.json` 与 engine 配置，避免旋转式 refresh token 失配后出现“刷新凭证无效”。
 - `GET /v1/plans`、`POST /v1/orders`、mock `pay_url`、订单 `paid` 状态和权益刷新已打通。
 - `POST /v1/stt/transcribe` 和 `POST /v1/llm/chat` 可用 `DEV_MOCK_MODELS=true` 验证 mock 模型链路，也可用真实 `GLM_API_KEY` 验证真实模型链路。
+- `ALT + SPACE` AI 指令编辑链路已接入后端模型代理：语音指令经 `/v1/stt/transcribe` 识别，需要模型判断或改写时再经 `/v1/llm/chat`，额度和鉴权仍由本后端统一处理。
+- AI 普通问答回复只在桌面端状态框展示，不会由后端或 engine 直接打进输入框；只有被桌面端识别为生成、改写或记忆片段召回的操作才会写入当前应用。
 - refresh token 使用旋转机制，旧 refresh token 在刷新成功后会失效。
 - TypeUp 桌面端快捷键提示会按当前平台和本地 engine 配置动态显示；Windows 默认 `ALT` / `ALT + SPACE`，macOS 默认右 `Shift` / 右 `Option`。
 - 用户被 Admin API 禁用后，`POST /v1/auth/refresh` 会撤销当前 refresh token 并返回 `403 FORBIDDEN`。
